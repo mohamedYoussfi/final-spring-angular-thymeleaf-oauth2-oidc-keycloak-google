@@ -1,0 +1,142 @@
+services:
+  mysql-db-inventory:
+    image: mariadb:10.6
+    container_name: mysql-db-inventory
+    restart: always
+    volumes:
+      - mysql_data:/var/lib/mysql
+    environment:
+      MYSQL_DATABASE: inventory-db
+      MYSQL_USER: youssfi
+      MYSQL_PASSWORD: 1234
+      MYSQL_ROOT_PASSWORD: admin
+    ports:
+      - 3306:3306
+    healthcheck:
+      test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
+      timeout: 5s
+      retries: 10
+  phpmyadmin:
+    image: phpmyadmin
+    restart: always
+    ports:
+      - 9999:80
+    environment:
+      PMA_HOST: mysql-db-inventory
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+  enset-inventory-service:
+    build: ./inventory-service
+    container_name: enset-inventory-service
+    ports:
+      - '8098:8098'
+    expose:
+      - '8098'
+    restart: always
+    depends_on:
+      - mysql-db-inventory
+    environment:
+      - DB_URL=jdbc:mysql://mysql-db-inventory:3306/inventory-db
+      - JWT_ISSUER_URI=http://localhost:8080/realms/sdia-realm
+      - JWT_JWK_SET_URI=http://keycloak:8080/realms/sdia-realm/protocol/openid-connect/certs
+
+  postgres-service:
+    image: postgres
+    container_name: postgres-service
+    volumes:
+      - postgres_data_enset:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: keycloak_enset_db
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: k1234
+    ports:
+      - '5432:5432'
+    expose:
+      - '5432'
+    healthcheck:
+      test: "exit 0"
+  pgadmin4:
+    image: dpage/pgadmin4
+    container_name: pgadmin4
+    restart: always
+    ports:
+      - "8888:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: med@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: azer
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres-service:5432/keycloak_enset_db
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: k1234
+      KEYCLOAK_ADMIN: admin
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    command:
+      - start-dev
+    restart: always
+    ports:
+      - '8080:8080'
+    expose:
+      - '8080'
+    depends_on:
+      - postgres-service
+  enset-customer-service-thymeleaf:
+    build: ./customer-front-thymeleaf-app
+    container_name: enset-customer-service-thymeleaf
+    ports:
+      - '8090:8090'
+    expose:
+      - '8090'
+    restart: always
+    depends_on:
+      - keycloak
+    environment:
+      - KEYCLOAK_REDIRECT_URI=http://localhost:8090/login/oauth2/code/sdia-customer-client
+      - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/sdia-realm
+      - KEYCLOAK_AUTH=http://localhost:8080/realms/sdia-realm/protocol/openid-connect/auth
+      - KEYCLOAK_AUTH_TOKEN=http://keycloak:8080/realms/sdia-realm/protocol/openid-connect/token
+      - JWT_JWK_SET_URI=http://keycloak:8080/realms/sdia-realm/protocol/openid-connect/certs
+      - INVENTORY_SERVICE_BASE_URI=http://enset-inventory-service:8098
+  angular-front:
+    build: ./angular-front-app
+    container_name: angular-front
+    ports:
+      - '8085:80'
+    expose:
+      - '8085'
+    restart: always
+  zookeeper-service:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper-service
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  broker-service:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: broker-service
+    ports:
+      # To learn about configuring Kafka for access across networks see
+      # https://www.confluent.io/blog/kafka-client-cannot-connect-to-broker-on-aws-on-docker-etc/
+      - "9092:9092"
+    restart: always
+    depends_on:
+      - zookeeper-service
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://broker:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+volumes:
+  mysql_data:
+  postgres_data_enset:
+  pgadmin_data:

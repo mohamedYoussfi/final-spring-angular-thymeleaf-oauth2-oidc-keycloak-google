@@ -1,0 +1,11 @@
+  enset-customer-service-thymeleaf:
+    build: ./customer-front-thymeleaf-app
+    container_name: enset-customer-service-thymeleaf
+    ports:
+      - '8090:8090'
+    expose:
+      - '8090'
+    restart: always
+    environment:
+      - KEYCLOAK_REDIRECT_URI= http://localhost:8090/login/oauth2/code/sdia-customer-client
+      - KEYCLOAK_ISSUER_URI= http://localhost:8080/realms/sdia-realm
